@@ -18,17 +18,20 @@ import dwave.inspector
 from dwave.system import EmbeddingComposite, DWaveSampler
 
 from utilities import get_groupings, visualize_groupings, visualize_scatterplot
-k=3
+k=2
 
 class Coordinate:
+    number_of_points= 0
     def __init__(self,x,y,*args):
         self.x = x
         self.y = y
-        classes_nums = [chr(i+97) for i in range(k)]
+        class_chars = ["x"+str(i) for i in range(k)]
         label = "{0},{1}_".format(x, y)
         
-        for j in classes_nums:
-            setattr(self, j, label + j)
+        for j in class_chars:
+            setattr(self, j, label + j+str(Coordinate.number_of_points))
+            
+        Coordinate.number_of_points += 1
 
 
 def get_distance(coordinate_0, coordinate_1):
@@ -67,7 +70,11 @@ def cluster_points(scattered_points, filename):
     # Apply constraint: coordinate can only be in one colour group
     choose_one_group = allowed_States(k)
     for coord in coordinates:
-        csp.add_constraint(choose_one_group, (coord.r, coord.g, coord.b))
+        mylist=list(vars(coord).values())
+        mylist.remove(coord.x)
+        mylist.remove(coord.y)
+
+        csp.add_constraint(choose_one_group, mylist)
 
     # Build initial BQM
     bqm = dwavebinarycsp.stitch(csp)
@@ -80,9 +87,10 @@ def cluster_points(scattered_points, filename):
             weight = -math.cos(d*math.pi)
 
             # Apply weights to BQM
-            bqm.add_interaction(coord0.r, coord1.r, weight)
-            bqm.add_interaction(coord0.g, coord1.g, weight)
-            bqm.add_interaction(coord0.b, coord1.b, weight)
+
+            for i in range(k):
+                bqm.add_interaction(getattr(coord0,"x"+str(i)), getattr(coord1,"x"+str(i)), weight)
+
 
     # Edit BQM to bias for far away points to have different colors
     for i, coord0 in enumerate(coordinates[:-1]):
@@ -93,13 +101,14 @@ def cluster_points(scattered_points, filename):
             d = math.sqrt(get_distance(coord0, coord1) / max_distance)
             weight = -math.tanh(d) * 0.1
 
-            # Apply weights to BQM
-            bqm.add_interaction(coord0.r, coord1.b, weight)
-            bqm.add_interaction(coord0.r, coord1.g, weight)
-            bqm.add_interaction(coord0.b, coord1.r, weight)
-            bqm.add_interaction(coord0.b, coord1.g, weight)
-            bqm.add_interaction(coord0.g, coord1.r, weight)
-            bqm.add_interaction(coord0.g, coord1.b, weight)
+        # Apply weights to BQM
+            for p in range(k):
+                for m in range(k):
+                    if p!=m:
+                        bqm.add_interaction(getattr(coord0,"x"+str(p)),getattr(coord1,"x"+str(m)), weight)
+            
+
+
 
     # Submit problem to D-Wave sampler
     sampler = EmbeddingComposite(DWaveSampler(solver={'qpu': True}))
